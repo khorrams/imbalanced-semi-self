@@ -13,6 +13,7 @@ import models
 from tensorboardX import SummaryWriter
 from utils import *
 from dataset.imbalance_cifar import ImbalanceCIFAR10, ImbalanceCIFAR100
+from dataset.imbalance_cifar import ImbalanceCIFAR10SYNS
 from dataset.imbalance_svhn import ImbalanceSVHN
 from losses import LDAMLoss, FocalLoss
 
@@ -22,7 +23,9 @@ model_names = sorted(name for name in models.__dict__
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default='cifar10', choices=['cifar10', 'cifar100', 'svhn'])
-parser.add_argument('--data_path', type=str, default='./data')
+parser.add_argument('--data_path', type=str, default='./data/cifar10')
+
+
 parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet32', choices=model_names,
                     help='model architecture: ' + ' | '.join(model_names))
 parser.add_argument('--loss_type', default="CE", type=str, choices=['CE', 'Focal', 'LDAM'])
@@ -31,7 +34,7 @@ parser.add_argument('--imb_factor', default=0.01, type=float, help='imbalance fa
 parser.add_argument('--train_rule', default='None', type=str,
                     choices=['None', 'Resample', 'Reweight', 'DRW'])
 parser.add_argument('--rand_number', default=0, type=int, help='fix random number for data sampling')
-parser.add_argument('--exp_str', default='ss_pretrained', type=str,
+parser.add_argument('--exp_str', default='normal_lt', type=str,
                     help='(additional) name to indicate experiment')
 parser.add_argument('--gpu', default=0, type=int, help='GPU id to use')
 parser.add_argument('--pretrained_model', type=str, default='')
@@ -48,6 +51,11 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true', he
 parser.add_argument('--seed', default=None, type=int, help='seed for initializing training.')
 parser.add_argument('--root_log', type=str, default='log')
 parser.add_argument('--root_model', type=str, default='./checkpoint')
+###
+parser.add_argument('--add_syns_data', action="store_true")
+parser.add_argument('--xflip', action="store_true")
+parser.add_argument('--stylegan_path', type=str, default="snaps/network-snapshot-028224.pkl")
+
 best_acc1 = 0
 
 
@@ -109,9 +117,11 @@ def main_worker(gpu, args):
     ])
 
     if args.dataset == 'cifar10':
-        train_dataset = ImbalanceCIFAR10(
+        train_dataset = ImbalanceCIFAR10SYNS(
             root=args.data_path, imb_type=args.imb_type, imb_factor=args.imb_factor,
-            rand_number=args.rand_number, train=True, download=True, transform=transform_train)
+            rand_number=args.rand_number, train=True, download=True, transform=transform_train,
+            add_syns_data=args.add_syns_data, stylegan_path=args.stylegan_path, xflip=args.xflip
+        )
         val_dataset = datasets.CIFAR10(root=args.data_path,
                                        train=False, download=True, transform=transform_val)
         train_sampler = None
