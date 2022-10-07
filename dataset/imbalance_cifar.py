@@ -17,13 +17,12 @@ class ImbalanceCIFAR10SYNS(torchvision.datasets.CIFAR10):
 
     def __init__(self, root, imb_type='exp', imb_factor=0.01, rand_number=0, train=True,
                  transform=None, target_transform=None, download=False, add_syns_data=False,
-                 stylegan_path=None, xflip=False,):
+                 stylegan_path=None, xflip=False, truncation_psi=0.7):
         super(ImbalanceCIFAR10SYNS, self).__init__(root, train, transform, target_transform, download)
 
         self.imb_factor = imb_factor
         self.xflip = xflip
         self.rand_number = rand_number
-
         if add_syns_data:
             assert stylegan_path
 
@@ -40,7 +39,7 @@ class ImbalanceCIFAR10SYNS(torchvision.datasets.CIFAR10):
             if not self.syns_data_exist():
                 # generate syns imgs
                 gap_img_num_per_cls = [int(self.img_max - i) for i in img_num_list]
-                syns_data = self.gen_syns_data(stylegan_path, gap_img_num_per_cls)
+                syns_data = self.gen_syns_data(stylegan_path, gap_img_num_per_cls, truncation_psi=truncation_psi)
                 # save syns imgs
                 with open(os.path.join(self.root, f"{fname}.json"), "w") as f:
                     json.dump({"labels": syns_data}, f)
@@ -68,11 +67,76 @@ class ImbalanceCIFAR10SYNS(torchvision.datasets.CIFAR10):
         self.data = np.concatenate((self.data, data), axis=0)
         self.targets.extend(targets)
 
+    def gen_syns_data_multi(self,
+                      stylegan_path,
+                      gap_img_num_per_cls,
+                      batch_size=16,
+                      truncation_psi=0.7,
+                      noise_mode="const",
+                      device="cuda"):
+        """
+
+        :param stylegan_path:
+        :param gap_img_num_per_cls:
+        :param batch_size:
+        :param truncation_psi:
+        :param noise_mode:
+        :param device:
+        :return:
+        """
+        syns_list = []
+        meta = {"snaps/g0.pkl": {"inds": [0,1,2,3]},
+                "snaps/g1.pkl": {"inds": [4,5,6]},
+                "snaps/g2.pkl": {"inds": [7,8,9]}
+                }
+        for stylegan_path, val in meta.items():
+            # load pretrained generator, discriminator, and encoder
+            with dnnlib.util.open_url(stylegan_path) as f:
+                G = legacy.load_network_pkl(f)['G_ema'].to(device)  # type: ignore
+                G.eval()
+                G.requires_grad = False
+            assert G.c_dim
+
+            self.classes = list(self.classes)
+            classes = [self.classes[x] for x in val["inds"]]
+            gp_imgs_per_cls = [gap_img_num_per_cls[x] for x in val["inds"]]
+
+            for class_idx, count in zip(classes, gp_imgs_per_cls):
+                # make outdir
+                print(f"Generating {count} images for class {class_idx}..")
+                cur_dir = f"imf{self.imb_factor}/syns_{class_idx:05d}"
+                cur_path = os.path.join(self.root, cur_dir)
+                if not os.path.exists(cur_path):
+                    os.makedirs(cur_path)
+
+                rem = count
+                idx = 0
+
+                while rem > 0:
+                    cur_batch_size = batch_size if rem >= batch_size else rem
+                    rem -= cur_batch_size
+                    # label
+                    label = torch.zeros([cur_batch_size, G.c_dim], device=device)
+                    label[:, class_idx] = 1
+                    # noise
+                    z = torch.from_numpy(np.random.RandomState(self.rand_number).randn(cur_batch_size, G.z_dim)).to(
+                        device)
+                    # generate
+                    imgs = G(z, label, truncation_psi=truncation_psi, noise_mode=noise_mode)
+                    imgs = (imgs.permute(0, 2, 3, 1) * 127.5 + 128).clamp(0, 255).to(torch.uint8)
+                    # save images
+                    for img in imgs:
+                        file_name = f"img_syn{idx:08d}.png"
+                        PIL.Image.fromarray(img.cpu().numpy(), 'RGB').save(os.path.join(self.root, cur_dir, file_name))
+                        syns_list.append([f"{cur_dir}/{file_name}", class_idx])
+                        idx += 1
+        return syns_list
+
     def gen_syns_data(self,
                       stylegan_path,
                       gap_img_num_per_cls,
                       batch_size=16,
-                      truncation_psi=0.9,
+                      truncation_psi=0.7,
                       noise_mode="const",
                       device="cuda"):
         """

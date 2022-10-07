@@ -16,7 +16,7 @@ from dataset.imbalance_cifar import ImbalanceCIFAR10, ImbalanceCIFAR100
 from dataset.imbalance_cifar import ImbalanceCIFAR10SYNS
 from dataset.imbalance_svhn import ImbalanceSVHN
 from losses import LDAMLoss, FocalLoss
-
+from dataset.imb_gen import LtDataset
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
                      and callable(models.__dict__[name]))
@@ -55,6 +55,7 @@ parser.add_argument('--root_model', type=str, default='./checkpoint')
 parser.add_argument('--add_syns_data', action="store_true")
 parser.add_argument('--xflip', action="store_true")
 parser.add_argument('--stylegan_path', type=str, default="snaps/network-snapshot-028224.pkl")
+parser.add_argument('--truncation_psi', type=float, default=1.0)
 
 best_acc1 = 0
 
@@ -93,6 +94,7 @@ def main_worker(gpu, args):
         raise NotImplementedError
     use_norm = True if args.loss_type == 'LDAM' else False
     model = models.__dict__[args.arch](num_classes=num_classes, use_norm=use_norm)
+    model.conv1 = nn.Conv2d(4, 16, kernel_size=3, stride=1, padding=1, bias=False)
 
     if args.gpu is not None:
         torch.cuda.set_device(args.gpu)
@@ -117,10 +119,16 @@ def main_worker(gpu, args):
     ])
 
     if args.dataset == 'cifar10':
-        train_dataset = ImbalanceCIFAR10SYNS(
-            root=args.data_path, imb_type=args.imb_type, imb_factor=args.imb_factor,
-            rand_number=args.rand_number, train=True, download=True, transform=transform_train,
-            add_syns_data=args.add_syns_data, stylegan_path=args.stylegan_path, xflip=args.xflip
+        # train_dataset = ImbalanceCIFAR10SYNS(
+        #     root=args.data_path, imb_type=args.imb_type, imb_factor=args.imb_factor,
+        #     rand_number=args.rand_number, train=True, download=True, transform=transform_train,
+        #     add_syns_data=args.add_syns_data, stylegan_path=args.stylegan_path, xflip=args.xflip,
+        #     truncation_psi=args.truncation_psi,
+        # )
+        train_dataset = LtDataset(
+            root="data/cf10", fname="dataset.json", imf=0.01,
+            transform=transform_train, add_syns_data=True, stylegan_path="None",
+            xflip=False, random_seed=0
         )
         val_dataset = datasets.CIFAR10(root=args.data_path,
                                        train=False, download=True, transform=transform_val)
@@ -217,7 +225,7 @@ def main_worker(gpu, args):
     cudnn.benchmark = True
 
     if args.dataset.startswith(('cifar', 'svhn')):
-        cls_num_list = train_dataset.get_cls_num_list()
+        cls_num_list = train_dataset.get_lt_img_num_per_cls()
         print('cls num list:')
         print(cls_num_list)
         args.cls_num_list = cls_num_list
@@ -289,11 +297,16 @@ def train(train_loader, model, criterion, optimizer, epoch, args, log, tf_writer
     model.train()
 
     end = time.time()
-    for i, (inputs, target) in enumerate(train_loader):
+    for i, (inputs, target, real) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
         inputs = inputs.cuda()
         target = target.cuda()
+        ax = torch.zeros(inputs.shape[0], 1, inputs.shape[2], inputs.shape[3]).cuda()
+        ax[real] = 1.0
+
+        inputs = torch.cat((inputs, ax), dim=1)
+
         output = model(inputs)
         loss = criterion(output, target)
 
@@ -343,6 +356,9 @@ def validate(val_loader, model, criterion, epoch, args, log=None, tf_writer=None
         for i, (inputs, target) in enumerate(val_loader):
             inputs = inputs.cuda()
             target = target.cuda()
+
+            ax = torch.ones(inputs.shape[0], 1, inputs.shape[2], inputs.shape[3]).cuda()
+            inputs = torch.cat((inputs, ax), dim=1)
 
             output = model(inputs)
             loss = criterion(output, target)

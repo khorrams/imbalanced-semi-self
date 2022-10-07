@@ -8,7 +8,7 @@ import json
 
 
 class LtDataset(torch.utils.data.Dataset):
-    def __init__(self, root="data/cifar10", fname="dataset.json", imf=100, reverse=False,
+    def __init__(self, root="data/cf10", fname="dataset.json", imf=0.01, transform=None,
                  add_syns_data=False, stylegan_path=None,
                  xflip=False, random_seed=0):
         """
@@ -20,9 +20,9 @@ class LtDataset(torch.utils.data.Dataset):
         self.root = root
         self.fname = fname
         self.imf = imf
-        self.reverse = reverse
         self.xflip = xflip
         self.random_seed = random_seed
+        self.transform = transform
 
         if add_syns_data:
             assert stylegan_path
@@ -44,24 +44,24 @@ class LtDataset(torch.utils.data.Dataset):
 
         lt_img_num_per_cls = self.get_lt_img_num_per_cls()
         self.lt_data = self.gen_imbalanced_data(data, lt_img_num_per_cls)
+        self.lt_data = [[*x, 1] for x in self.lt_data]
 
         if add_syns_data:
             # syns file name
             fname = f"syns_imf{self.imf}"
-            if self.reverse:
-                fname += "_reverse"
 
-            if not self.syns_data_exist():
-                # generate syns imgs
-                gap_img_num_per_cls = [self.img_max - i for i in lt_img_num_per_cls]
-                syns_data = self.gen_syns_data(stylegan_path, gap_img_num_per_cls)
-                # save syns imgs
-                with open(os.path.join(self.root, f"{fname}.json"), "w") as f:
-                    json.dump({"labels": syns_data}, f)
-            else:
-                # load syns imgs
-                with open(os.path.join(self.root, f"{fname}.json")) as f:
-                    syns_data = json.load(f)["labels"]
+            # if not self.syns_data_exist():
+            #     # generate syns imgs
+            #     gap_img_num_per_cls = [self.img_max - i for i in lt_img_num_per_cls]
+            #     syns_data = self.gen_syns_data(stylegan_path, gap_img_num_per_cls)
+            #     # save syns imgs
+            #     with open(os.path.join(self.root, f"{fname}.json"), "w") as f:
+            #         json.dump({"labels": syns_data}, f)
+            # else:
+            # load syns imgs
+            with open(os.path.join(self.root, f"syns_imf0.01.json")) as f:
+                syns_data = json.load(f)["labels"]
+                syns_data = [[*x, 0] for x in syns_data]
             # add syns data
             self.lt_data.extend(syns_data)
 
@@ -73,15 +73,14 @@ class LtDataset(torch.utils.data.Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        fname, label = self.filenames[idx]
+        fname, label, real = self.lt_data[idx]
         img_name = os.path.join(self.root, fname)
         image = PIL.Image.open(img_name).convert('RGB')
 
         if self.transform:
             image = self.transform(image)
 
-        label = self.labels[idx]
-        return image, label
+        return image, label, real
 
     def __len__(self):
         return len(self.lt_data)
@@ -177,12 +176,8 @@ class LtDataset(torch.utils.data.Dataset):
         """
         img_num_per_cls = []
         for cls_idx in self.classes:
-            if self.reverse:
-                num = self.img_max * (1 / self.imf ** ((self.cls_num - 1 - cls_idx) / (self.cls_num - 1.0)))
-                img_num_per_cls.append(int(num))
-            else:
-                num = self.img_max * (1 / self.imf ** (cls_idx / (self.cls_num - 1.0)))
-                img_num_per_cls.append(int(num))
+            num = self.img_max * (self.imf ** (cls_idx / (self.cls_num - 1.0)))
+            img_num_per_cls.append(int(num))
         return img_num_per_cls
 
     def gen_imbalanced_data(self, ds, lt_img_num_per_cls):
