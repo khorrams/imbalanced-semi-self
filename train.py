@@ -119,21 +119,21 @@ def main_worker(gpu, args):
     ])
 
     if args.dataset == 'cifar10':
-        # train_dataset = ImbalanceCIFAR10SYNS(
-        #     root=args.data_path, imb_type=args.imb_type, imb_factor=args.imb_factor,
-        #     rand_number=args.rand_number, train=True, download=True, transform=transform_train,
-        #     add_syns_data=args.add_syns_data, stylegan_path=args.stylegan_path, xflip=args.xflip,
-        #     truncation_psi=args.truncation_psi,
-        # )
-        train_dataset = datasets.ImageFolder('data/train', transform=transform_train)
+        train_dataset = ImbalanceCIFAR10SYNS(
+            root=args.data_path, imb_type=args.imb_type, imb_factor=args.imb_factor,
+            rand_number=args.rand_number, train=True, download=True, transform=transform_train,
+            add_syns_data=args.add_syns_data, stylegan_path=args.stylegan_path, xflip=args.xflip,
+            truncation_psi=args.truncation_psi,
+        )
+#         train_dataset = datasets.ImageFolder('data/train', transform=transform_train)
 #         train_dataset = LtDataset(
 #             root="data/cf10", fname="dataset.json", imf=0.01,
 #             transform=transform_train, add_syns_data=True, stylegan_path="None",
 #             xflip=False, random_seed=0
 #         )
-        val_dataset = datasets.ImageFolder('data/test', transform=transform_val)
-#         val_dataset = datasets.CIFAR10(root=args.data_path,
-#                                        train=False, download=True, transform=transform_val)
+#         val_dataset = datasets.ImageFolder('data/test', transform=transform_val)
+        val_dataset = datasets.CIFAR10(root=args.data_path,
+                                       train=False, download=True, transform=transform_val)
         train_sampler = None
         if args.train_rule == 'Resample':
             train_sampler = ImbalancedDatasetSampler(train_dataset)
@@ -226,11 +226,11 @@ def main_worker(gpu, args):
 
     cudnn.benchmark = True
 
-#     if args.dataset.startswith(('cifar', 'svhn')):
-#         cls_num_list = train_dataset.get_lt_img_num_per_cls()
-#         print('cls num list:')
-#         print(cls_num_list)
-#         args.cls_num_list = cls_num_list
+    if args.dataset.startswith(('cifar', 'svhn')):
+        cls_num_list = train_dataset.get_lt_img_num_per_cls()
+        print('cls num list:')
+        print(cls_num_list)
+        args.cls_num_list = cls_num_list
 
     # init log for training
     log_training = open(os.path.join(args.root_log, args.store_name, 'log_train.csv'), 'w')
@@ -299,14 +299,14 @@ def train(train_loader, model, criterion, optimizer, epoch, args, log, tf_writer
     model.train()
 
     end = time.time()
-    for i, (inputs, target) in enumerate(train_loader):
-#     for i, (inputs, target, real) in enumerate(train_loader):
+#     for i, (inputs, target) in enumerate(train_loader):
+    for i, (inputs, target, real) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
         inputs = inputs.cuda()
         target = target.cuda()
         ax = torch.zeros(inputs.shape[0], 1, inputs.shape[2], inputs.shape[3]).cuda()
-#         ax[real] = 1.0
+        ax[real] = 1.0
 
         inputs = torch.cat((inputs, ax), dim=1)
 
