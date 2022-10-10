@@ -125,13 +125,15 @@ def main_worker(gpu, args):
         #     add_syns_data=args.add_syns_data, stylegan_path=args.stylegan_path, xflip=args.xflip,
         #     truncation_psi=args.truncation_psi,
         # )
-        train_dataset = LtDataset(
-            root="data/cf10", fname="dataset.json", imf=0.01,
-            transform=transform_train, add_syns_data=True, stylegan_path="None",
-            xflip=False, random_seed=0
-        )
-        val_dataset = datasets.CIFAR10(root=args.data_path,
-                                       train=False, download=True, transform=transform_val)
+        train_dataset = datasets.ImageFolder('data/train', transform=transform_train)
+#         train_dataset = LtDataset(
+#             root="data/cf10", fname="dataset.json", imf=0.01,
+#             transform=transform_train, add_syns_data=True, stylegan_path="None",
+#             xflip=False, random_seed=0
+#         )
+        val_dataset = datasets.ImageFolder('data/test', transform=transform_val)
+#         val_dataset = datasets.CIFAR10(root=args.data_path,
+#                                        train=False, download=True, transform=transform_val)
         train_sampler = None
         if args.train_rule == 'Resample':
             train_sampler = ImbalancedDatasetSampler(train_dataset)
