@@ -226,11 +226,11 @@ def main_worker(gpu, args):
 
     cudnn.benchmark = True
 
-    if args.dataset.startswith(('cifar', 'svhn')):
-        cls_num_list = train_dataset.get_lt_img_num_per_cls()
-        print('cls num list:')
-        print(cls_num_list)
-        args.cls_num_list = cls_num_list
+#     if args.dataset.startswith(('cifar', 'svhn')):
+#         cls_num_list = train_dataset.get_lt_img_num_per_cls()
+#         print('cls num list:')
+#         print(cls_num_list)
+#         args.cls_num_list = cls_num_list
 
     # init log for training
     log_training = open(os.path.join(args.root_log, args.store_name, 'log_train.csv'), 'w')
@@ -299,13 +299,14 @@ def train(train_loader, model, criterion, optimizer, epoch, args, log, tf_writer
     model.train()
 
     end = time.time()
-    for i, (inputs, target, real) in enumerate(train_loader):
+    for i, (inputs, target) in enumerate(train_loader):
+#     for i, (inputs, target, real) in enumerate(train_loader):
         data_time.update(time.time() - end)
 
         inputs = inputs.cuda()
         target = target.cuda()
         ax = torch.zeros(inputs.shape[0], 1, inputs.shape[2], inputs.shape[3]).cuda()
-        ax[real] = 1.0
+#         ax[real] = 1.0
 
         inputs = torch.cat((inputs, ax), dim=1)
 
